@@ -77,7 +77,8 @@ public abstract class AgentBase(ILLMClient llmClient) : IAgent
 
             try
             {
-                var response = await LlmClient.ExecuteAsync(currentSpec, ct);
+                using var callTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct, ctx.TimeoutToken.Token);
+                var response = await LlmClient.ExecuteAsync(currentSpec, callTimeout.Token);
                 sw.Stop();
 
                 OrchestratorMetrics.LLMCallDurationSeconds.Record(sw.Elapsed.TotalSeconds,

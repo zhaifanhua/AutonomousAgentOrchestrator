@@ -15,11 +15,19 @@ public class DeveloperAgent(ILLMClient llmClient) : AgentBase(llmClient)
         你是一个代码实现工程师。根据规划文档，输出严格的 JSON（不得有 markdown 包裹）：
         {
           "edits": [
-            {"path": "相对路径", "patch_or_full_file": "完整文件内容或 unified diff", "rationale": "修改原因"}
+            {
+              "path": "相对路径（src/ 或 tests/ 目录内）",
+              "content_type": "full_file",
+              "patch_or_full_file": "完整文件内容（不得输出 unified diff 格式）",
+              "rationale": "修改原因"
+            }
           ],
           "notes": ""
         }
-        确保所有路径均在 src/ 或 tests/ 目录内。禁止输出 workspace 根目录外的路径。
+        规则：
+        1. content_type 固定为 full_file，始终输出完整文件内容，禁止输出 unified diff/patch 格式。
+        2. 所有路径均在 src/ 或 tests/ 目录内。
+        3. 禁止输出 workspace 根目录外的路径。
         """;
 
     public override string Name => "Developer";
@@ -61,6 +69,15 @@ public class DeveloperAgent(ILLMClient llmClient) : AgentBase(llmClient)
                 ctx.Logger.LogWarning("Developer 试图写入白名单外路径: {Path}，已忽略", edit.Path);
                 continue;
             }
+
+            // 防御：若 LLM 仍返回 diff 格式（以 --- / +++ / @@ 开头），拒绝写入并报告问题
+            if (IsDiffFormat(edit.PatchOrFullFile))
+            {
+                ctx.Logger.LogError(
+                    "Developer 对路径 {Path} 输出了 diff 格式，要求完整文件内容，已跳过", edit.Path);
+                continue;
+            }
+
             await ctx.Workspace.WriteAsync(edit.Path, edit.PatchOrFullFile, ct);
             artifacts.Add(new Artifact(edit.Path, "code", string.Empty, 0, DateTime.UtcNow));
         }
@@ -79,6 +96,22 @@ public class DeveloperAgent(ILLMClient llmClient) : AgentBase(llmClient)
         { Artifacts = artifacts };
     }
 
+    /// <summary>
+    /// 判断内容是否为 unified diff 格式（以 --- / +++ / @@ 行开头）。
+    /// </summary>
+    private static bool IsDiffFormat(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        var firstLines = content.AsSpan()[..Math.Min(300, content.Length)];
+        return firstLines.Contains("--- ", StringComparison.Ordinal)
+            && firstLines.Contains("+++ ", StringComparison.Ordinal)
+            && firstLines.Contains("@@ ", StringComparison.Ordinal);
+    }
+
     private record DeveloperOutput(Edit[]? Edits, string? Notes);
-    private record Edit(string Path, string PatchOrFullFile, string Rationale);
+    private record Edit(string Path, string ContentType, string PatchOrFullFile, string Rationale);
 }

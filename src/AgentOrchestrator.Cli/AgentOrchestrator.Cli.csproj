@@ -17,6 +17,18 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- dotnet global tool 配置 -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>aao</ToolCommandName>
+    <PackageId>AgentOrchestrator.Cli</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>ZhaiFanhua</Authors>
+    <Description>事件驱动、智能路由、语义记忆的 Autonomous Agent Orchestrator CLI</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+    <!-- 自包含发布配置 -->
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
 </Project>

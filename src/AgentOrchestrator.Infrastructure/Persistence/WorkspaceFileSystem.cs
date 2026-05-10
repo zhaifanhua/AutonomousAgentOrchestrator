@@ -76,8 +76,32 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
 
     public bool IsPathAllowed(string relativePath, IReadOnlySet<string> allowlist)
     {
-        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
-        return allowlist.Any(prefix => normalized.StartsWith(prefix.TrimStart('/'), StringComparison.OrdinalIgnoreCase));
+        // 先解析为绝对路径（消除 ../ 等），再做前缀比较
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(Path.Combine(RootPath, relativePath));
+        }
+        catch
+        {
+            return false;
+        }
+
+        // 路径必须仍在 workspace 根目录内
+        if (!IsUnderRoot(fullPath))
+        {
+            return false;
+        }
+
+        return allowlist.Any(prefix =>
+        {
+            var prefixFull = Path.GetFullPath(Path.Combine(RootPath, prefix.TrimStart('/').TrimStart('\\')));
+            // 加路径分隔符防止同名前缀目录绕过
+            return fullPath.StartsWith(
+                prefixFull.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fullPath, prefixFull, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     public string ResolveAndValidate(string relativePath, IReadOnlySet<string> allowlist)
@@ -100,16 +124,27 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
     }
 
     /// <summary>
-    /// 解析绝对路径并验证未逃出 workspace 根目录
+    /// 解析绝对路径并验证未逃出 workspace 根目录。
+    /// 加路径分隔符防止同名前缀目录绕过（/workspace 不匹配 /workspace-evil）。
     /// </summary>
     private string ResolveSafe(string relativePath)
     {
         var full = Path.GetFullPath(Path.Combine(RootPath, relativePath));
-        if (!full.StartsWith(RootPath, StringComparison.OrdinalIgnoreCase))
+        if (!IsUnderRoot(full))
         {
             throw new UnauthorizedAccessException($"路径遍历攻击检测: '{relativePath}'");
         }
 
         return full;
+    }
+
+    /// <summary>
+    /// 判断绝对路径是否在 workspace 根目录内（含根目录本身）。
+    /// </summary>
+    private bool IsUnderRoot(string fullPath)
+    {
+        var root = RootPath.TrimEnd(Path.DirectorySeparatorChar);
+        return fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase);
     }
 }

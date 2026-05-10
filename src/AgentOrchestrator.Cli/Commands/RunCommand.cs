@@ -13,17 +13,14 @@ public class RunCommand(IServiceProvider services) : AsyncCommand<RunCommand.Set
 {
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
-        AnsiConsole.Write(new FigletText("Agent Orchestrator").Color(Color.Aqua));
+        // 单行紧凑标题，替代大体积 Figlet
+        AnsiConsole.MarkupLine("[bold aqua]▶ Agent Orchestrator[/]");
         AnsiConsole.MarkupLine($"[green]工作目录:[/] {settings.Workspace}");
         AnsiConsole.MarkupLine($"[green]需求文件:[/] {settings.RequirementRef}");
 
         var orchestrator = services.GetRequiredService<OrchestratorEngine>();
-        await AnsiConsole.Status()
-            .StartAsync("编排器运行中...", async ctx =>
-            {
-                ctx.Spinner(Spinner.Known.Dots);
-                await orchestrator.RunAsync(settings.RequirementRef, ct);
-            });
+        // forceNew=true：忽略已有 state.json，全新开始。这里不使用动态 spinner，避免日志输出被重绘打断。
+        await orchestrator.RunAsync(settings.RequirementRef, ct, forceNew: true);
 
         var status = orchestrator.GetStatus();
         AnsiConsole.MarkupLine($"\n[bold green]完成[/] 已完成={status.Completed.Count} 失败={status.Failed.Count}");
@@ -51,5 +48,9 @@ public class RunCommand(IServiceProvider services) : AsyncCommand<RunCommand.Set
         [CommandOption("--max-cost")]
         [Description("最大成本（美元）")]
         public double MaxCost { get; set; } = 10.0;
+
+        [CommandOption("--cli-timeout-seconds")]
+        [Description("单次 LLM CLI 调用超时秒数")]
+        public int CliTimeoutSeconds { get; set; } = 120;
     }
 }

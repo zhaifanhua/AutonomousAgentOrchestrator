@@ -1,43 +1,48 @@
+using System.Runtime.CompilerServices;
 using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Extensions.Logging;
-using System.Runtime.CompilerServices;
 
 namespace AgentOrchestrator.Infrastructure.LLMClients;
 
 /// <summary>
-/// Claude CLI 客户端：通过 claude.exe 调用 Claude 模型。
-/// prompt 超过阈值时自动走 stdin 传递，避免命令行参数过长。
+/// Claude Code CLI 客户端（claude 2.x）。
+/// 非交互调用格式：
+///   claude -p --model &lt;model&gt; --no-session-persistence --output-format text
+/// prompt 统一通过 stdin 传入，避免多行 prompt 进入 Windows cmd 参数解析和日志。
 /// </summary>
 public class ClaudeCliClient(
     string cliPath,
     IToolSandbox sandbox,
-    ILogger<ClaudeCliClient> logger) : ILLMClient
+    ILogger<ClaudeCliClient> logger,
+    TimeSpan? timeout = null) : ILLMClient
 {
-    private const int StdinThresholdBytes = 4096;
-
     public string ProviderName => "claude-cli";
+    private TimeSpan Timeout { get; } = timeout ?? TimeSpan.FromSeconds(120);
 
     public IReadOnlySet<string> SupportedModels => new HashSet<string>
     {
         "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5",
-        "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"
+        "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest",
+        // 短别名（claude CLI 支持）
+        "opus", "sonnet", "haiku",
     };
 
     public async Task<LLMResponse> ExecuteAsync(InvocationSpec spec, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var prompt = BuildPrompt(spec);
-        var args = BuildArguments(spec, prompt, out var stdinContent);
+        var args = BuildArguments(spec);
+        var stdinContent = BuildPrompt(spec);
 
         var inv = new ToolInvocation(
             Command: cliPath,
             Arguments: args,
             WorkingDirectory: Path.GetTempPath(),
+            // LLM CLI 调用无文件操作，AllowedPaths 留空（sandbox 不做路径校验）
             Environment: [],
-            Timeout: TimeSpan.FromSeconds(120),
+            Timeout: Timeout,
             StdInput: stdinContent,
-            AllowedPaths: new HashSet<string> { Path.GetTempPath() });
+            AllowedPaths: new HashSet<string>());
 
         var result = await sandbox.ExecuteAsync(inv, ct);
         sw.Stop();
@@ -46,7 +51,8 @@ public class ClaudeCliClient(
         {
             logger.LogError("Claude CLI 失败 ExitCode={Code} Err={Err}",
                 result.ExitCode, result.StdErrSnippet());
-            throw new LLMClientException($"Claude CLI 失败 (exit={result.ExitCode}): {result.StdErrSnippet()}");
+            throw new LLMClientException(
+                $"Claude CLI 失败 (exit={result.ExitCode}): {result.StdErrSnippet()}");
         }
 
         var content = result.StdOut.Trim();
@@ -58,9 +64,8 @@ public class ClaudeCliClient(
         InvocationSpec spec,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        // Claude CLI 不原生支持流式，逐字符模拟返回
         var response = await ExecuteAsync(spec, ct);
-        foreach (var chunk in ChunkString(response.Content, 50))
+        foreach (var chunk in ChunkString(response.Content, 60))
         {
             yield return new LLMToken(chunk);
         }
@@ -77,38 +82,43 @@ public class ClaudeCliClient(
             CostPer1KPromptTokens: modelId.Contains("opus") ? 0.015 : 0.003,
             CostPer1KCompletionTokens: modelId.Contains("opus") ? 0.075 : 0.015));
 
-    private static string BuildPrompt(InvocationSpec spec) =>
-        string.IsNullOrEmpty(spec.SystemPrompt)
-            ? spec.UserPrompt
-            : $"{spec.SystemPrompt}\n\n{spec.UserPrompt}";
-
-    private static string[] BuildArguments(InvocationSpec spec, string prompt, out string? stdinContent)
+    /// <summary>
+    /// 构建 claude CLI 参数数组。prompt 不进入参数，统一走 stdin。
+    /// </summary>
+    private static string[] BuildArguments(InvocationSpec spec)
     {
-        var args = new List<string> { "--model", spec.ModelId };
-        if (spec.MaxTokens > 0)
+        var args = new List<string>
         {
-            args.AddRange(["--max-tokens", spec.MaxTokens.ToString()]);
-        }
-
-        // 长 prompt 走 stdin，短 prompt 走命令行
-        if (System.Text.Encoding.UTF8.GetByteCount(prompt) > StdinThresholdBytes)
-        {
-            stdinContent = prompt;
-            args.Add("--stdin");
-        }
-        else
-        {
-            stdinContent = null;
-            args.AddRange(["-p", prompt]);
-        }
+            "-p",                            // 非交互打印模式
+            "--model", spec.ModelId,
+            "--no-session-persistence",      // 不保存会话到磁盘
+            "--output-format", "text",       // 纯文本输出，便于后续 JSON 提取
+        };
 
         return [.. args];
     }
 
+    private static string BuildPrompt(InvocationSpec spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec.SystemPrompt))
+        {
+            return spec.UserPrompt;
+        }
+
+        return $"""
+            <system>
+            {spec.SystemPrompt}
+            </system>
+
+            <user>
+            {spec.UserPrompt}
+            </user>
+            """;
+    }
+
     private static TokenUsage EstimateTokenUsage(InvocationSpec spec, string output, string modelId)
     {
-        // 粗略估算：4 字符 ≈ 1 token
-        var prompt = (spec.SystemPrompt + spec.UserPrompt).Length / 4;
+        var prompt = (spec.SystemPrompt.Length + spec.UserPrompt.Length) / 4;
         var completion = output.Length / 4;
         var cost = ((prompt * 0.003) + (completion * 0.015)) / 1000.0;
         return new TokenUsage(prompt, completion, modelId, cost);

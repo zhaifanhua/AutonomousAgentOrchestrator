@@ -14,10 +14,13 @@ namespace AgentOrchestrator.Infrastructure.Memory;
 public class SqliteMemoryStore(
     string dbPath,
     IEmbeddingService embedding,
-    ILogger<SqliteMemoryStore> logger) : IMemoryStore, IAsyncDisposable
+    ILogger<SqliteMemoryStore> logger) : IMemoryStore, IDisposable, IAsyncDisposable
 {
     private const double ConfidenceThreshold = 0.3;
     private SqliteConnection? _conn;
+
+    /// <summary>防止 Dispose / DisposeAsync 重复释放。</summary>
+    private bool _disposed;
 
     public async Task InitializeAsync(CancellationToken ct)
     {
@@ -117,11 +120,37 @@ public class SqliteMemoryStore(
         return [.. all.Where(e => e.Tags.Contains(tag))];
     }
 
-    public async ValueTask DisposeAsync()
+    /// <summary>
+    /// DI 容器默认同步释放单例；必须实现 IDisposable（不能只 IAsyncDisposable）。
+    /// </summary>
+    public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         if (_conn != null)
         {
-            await _conn.DisposeAsync();
+            _conn.Dispose();
+            _conn = null;
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (_conn != null)
+        {
+            await _conn.DisposeAsync().ConfigureAwait(false);
             _conn = null;
         }
 

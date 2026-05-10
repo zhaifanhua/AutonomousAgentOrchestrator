@@ -60,16 +60,28 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
             // 带超时等待
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(inv.Timeout);
+            using var progressTimer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+            var progressTask = LogProgressAsync(inv, sw, progressTimer, timeoutCts.Token);
 
             try
             {
                 await process.WaitForExitAsync(timeoutCts.Token);
+                progressTimer.Dispose();
+                await IgnoreCancellationAsync(progressTask);
+                process.WaitForExit();
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                // 超时：强制终止进程
-                logger.LogWarning("工具超时，强制终止进程 PID={PID}", process.Id);
+                progressTimer.Dispose();
+                await IgnoreCancellationAsync(progressTask);
+                logger.LogWarning("工具被取消或超时，强制终止进程 PID={PID}", process.Id);
                 KillProcessTree(process);
+
+                if (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+
                 sw.Stop();
                 return new ToolResult(-1, stdoutBuilder.ToString(), "TIMEOUT: 进程超时被终止", sw.Elapsed, 0);
             }
@@ -104,7 +116,6 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
     {
         var psi = new ProcessStartInfo
         {
-            FileName = inv.Command,
             UseShellExecute = false,         // 禁止 shell，防注入
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -112,9 +123,23 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
             CreateNoWindow = true,
         };
 
+        // Windows：.cmd / .bat 不能直接用 UseShellExecute=false 启动，需通过 cmd.exe /c 包装
+        if (OperatingSystem.IsWindows() &&
+            (inv.Command.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
+             inv.Command.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
+        {
+            psi.FileName = "cmd.exe";
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(inv.Command);
+        }
+        else
+        {
+            psi.FileName = inv.Command;
+        }
+
         foreach (var arg in inv.Arguments)
         {
-            psi.ArgumentList.Add(arg);        // 安全的参数数组传递
+            psi.ArgumentList.Add(arg);
         }
 
         foreach (var (k, v) in inv.Environment)
@@ -123,6 +148,64 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
         }
 
         return psi;
+    }
+
+    private async Task LogProgressAsync(
+        ToolInvocation inv,
+        Stopwatch sw,
+        PeriodicTimer timer,
+        CancellationToken ct)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                logger.LogInformation(
+                    "工具仍在运行: {Command}, Elapsed={ElapsedSeconds}s, Timeout={TimeoutSeconds}s",
+                    inv.Command,
+                    (int)sw.Elapsed.TotalSeconds,
+                    (int)inv.Timeout.TotalSeconds);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常结束或超时时由主流程处理。
+        }
+    }
+
+    private static async Task IgnoreCancellationAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// 校验路径（文件或目录）在白名单前缀内，防止越权访问。
+    /// 白名单条目若为空集合，表示仅校验工作目录边界（调用方已验证）。
+    /// </summary>
+    private static void ValidatePathInAllowlist(string path, IReadOnlySet<string> allowlist, string label)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var allowed = allowlist.Any(prefix =>
+        {
+            var fullPrefix = Path.GetFullPath(prefix);
+            // 加路径分隔符防止同名前缀目录绕过（如 /workspace 匹配 /workspace-evil）
+            return fullPath.StartsWith(
+                fullPrefix.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fullPath, fullPrefix, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (!allowed)
+        {
+            throw new UnauthorizedAccessException(
+                $"[Sandbox] {label} '{path}' 不在 AllowedPaths 白名单内，拒绝执行");
+        }
     }
 
     private static void KillProcessTree(Process process)
@@ -140,6 +223,18 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
     /// <summary>
     /// 日志中对参数进行遮蔽（避免密钥泄漏）
     /// </summary>
-    private static string EscapeArgForLog(string arg) =>
-        arg.Contains("key", StringComparison.OrdinalIgnoreCase) ? "***" : arg;
+    private static string EscapeArgForLog(string arg)
+    {
+        if (arg.Contains("key", StringComparison.OrdinalIgnoreCase) ||
+            arg.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+            arg.Contains("secret", StringComparison.OrdinalIgnoreCase))
+        {
+            return "***";
+        }
+
+        const int maxLoggedArgLength = 120;
+        return arg.Length <= maxLoggedArgLength
+            ? arg
+            : arg[..maxLoggedArgLength] + "...[truncated]";
+    }
 }

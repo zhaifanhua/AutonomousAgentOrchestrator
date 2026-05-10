@@ -14,11 +14,11 @@ public static class StateMachineValidator
     // 合法的迁移路径表
     private static readonly Dictionary<AgentTaskStatus, HashSet<AgentTaskStatus>> AllowedTransitions = new()
     {
-        [AgentTaskStatus.Init] = [AgentTaskStatus.Plan, AgentTaskStatus.Cancelled],
-        [AgentTaskStatus.Plan] = [AgentTaskStatus.Dev, AgentTaskStatus.Failed, AgentTaskStatus.PausedForApproval, AgentTaskStatus.Cancelled],
-        [AgentTaskStatus.Dev] = [AgentTaskStatus.Test, AgentTaskStatus.Plan, AgentTaskStatus.Failed, AgentTaskStatus.PausedForApproval, AgentTaskStatus.TimedOut, AgentTaskStatus.Cancelled],
+        [AgentTaskStatus.Init] = [AgentTaskStatus.Plan, AgentTaskStatus.Dev, AgentTaskStatus.Test, AgentTaskStatus.PausedForApproval, AgentTaskStatus.Cancelled],
+        [AgentTaskStatus.Plan] = [AgentTaskStatus.Dev, AgentTaskStatus.Done, AgentTaskStatus.Failed, AgentTaskStatus.PausedForApproval, AgentTaskStatus.TimedOut, AgentTaskStatus.Cancelled],
+        [AgentTaskStatus.Dev] = [AgentTaskStatus.Test, AgentTaskStatus.Plan, AgentTaskStatus.Done, AgentTaskStatus.Failed, AgentTaskStatus.PausedForApproval, AgentTaskStatus.TimedOut, AgentTaskStatus.Cancelled],
         [AgentTaskStatus.Test] = [AgentTaskStatus.Dev, AgentTaskStatus.Done, AgentTaskStatus.Failed, AgentTaskStatus.PausedForApproval, AgentTaskStatus.TimedOut, AgentTaskStatus.Cancelled],
-        [AgentTaskStatus.PausedForApproval] = [AgentTaskStatus.Dev, AgentTaskStatus.Plan, AgentTaskStatus.Failed, AgentTaskStatus.Cancelled],
+        [AgentTaskStatus.PausedForApproval] = [AgentTaskStatus.Dev, AgentTaskStatus.Plan, AgentTaskStatus.Done, AgentTaskStatus.Failed, AgentTaskStatus.Cancelled],
         [AgentTaskStatus.TimedOut] = [AgentTaskStatus.Dev, AgentTaskStatus.Failed, AgentTaskStatus.Cancelled],
         [AgentTaskStatus.Done] = [],
         [AgentTaskStatus.Failed] = [],

@@ -1,4 +1,4 @@
-using AgentOrchestrator.Agents.BuiltIn;
+﻿using AgentOrchestrator.Agents.BuiltIn;
 using AgentOrchestrator.Core.Interfaces;
 using AgentOrchestrator.Infrastructure.EventBus;
 using AgentOrchestrator.Infrastructure.LLMClients;
@@ -24,10 +24,11 @@ public static class ServiceCollectionExtensions
         string workspacePath,
         OrchestratorOptions options)
     {
-        // Serilog 结构化日志（JSON 格式）
+        // 控制台使用人类可读文本；文件保留结构化 JSONL，便于后续检索。
         var logger = new LoggerConfiguration()
             .MinimumLevel.Information()
-            .WriteTo.Console(new CompactJsonFormatter())
+            .WriteTo.Console(
+                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}")
             .WriteTo.File(new CompactJsonFormatter(),
                 Path.Combine(workspacePath, "logs", "orchestrator.jsonl"),
                 rollingInterval: RollingInterval.Day)
@@ -52,11 +53,17 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEmbeddingService>(sp =>
             new LocalEmbeddingService(sp.GetRequiredService<ILogger<LocalEmbeddingService>>()));
 
-        // 语义记忆（SQLite）
-        services.AddSingleton<SqliteMemoryStore>(sp => new SqliteMemoryStore(
-            Path.Combine(workspacePath, "memory.db"),
-            sp.GetRequiredService<IEmbeddingService>(),
-            sp.GetRequiredService<ILogger<SqliteMemoryStore>>()));
+        // 语义记忆（SQLite）：工厂内同步阻塞完成异步初始化
+        // AddSingleton 工厂不支持 async，用 GetAwaiter().GetResult() 确保 InitializeAsync 在首次使用前完成
+        services.AddSingleton<SqliteMemoryStore>(sp =>
+        {
+            var store = new SqliteMemoryStore(
+                Path.Combine(workspacePath, "memory.db"),
+                sp.GetRequiredService<IEmbeddingService>(),
+                sp.GetRequiredService<ILogger<SqliteMemoryStore>>());
+            store.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+            return store;
+        });
 
         services.AddSingleton<IMemoryStore>(sp => sp.GetRequiredService<SqliteMemoryStore>());
 
@@ -70,20 +77,29 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<ILLMClient>(sp =>
             {
                 var sandbox = sp.GetRequiredService<IToolSandbox>();
+                var cliTimeout = TimeSpan.FromSeconds(options.CliTimeoutSeconds);
                 var clients = new List<ILLMClient>();
 
-                var claudePath = Environment.GetEnvironmentVariable("CLAUDE_CLI_PATH");
+                // CLAUDE_CLI_PATH 优先；未设置时自动在 PATH 中查找 claude / claude.cmd
+                var claudePath = Environment.GetEnvironmentVariable("CLAUDE_CLI_PATH")
+                    ?? PathHelper.FindInPath("claude.cmd")
+                    ?? PathHelper.FindInPath("claude");
                 if (!string.IsNullOrEmpty(claudePath) && File.Exists(claudePath))
                 {
                     clients.Add(new ClaudeCliClient(claudePath, sandbox,
-                        sp.GetRequiredService<ILogger<ClaudeCliClient>>()));
+                        sp.GetRequiredService<ILogger<ClaudeCliClient>>(),
+                        cliTimeout));
                 }
 
-                var codexPath = Environment.GetEnvironmentVariable("CODEX_CLI_PATH");
+                // CODEX_CLI_PATH 优先；未设置时自动在 PATH 中查找 codex / codex.cmd
+                var codexPath = Environment.GetEnvironmentVariable("CODEX_CLI_PATH")
+                    ?? PathHelper.FindInPath("codex.cmd")
+                    ?? PathHelper.FindInPath("codex");
                 if (!string.IsNullOrEmpty(codexPath) && File.Exists(codexPath))
                 {
                     clients.Add(new CodexCliClient(codexPath, sandbox,
-                        sp.GetRequiredService<ILogger<CodexCliClient>>()));
+                        sp.GetRequiredService<ILogger<CodexCliClient>>(),
+                        cliTimeout));
                 }
 
                 // 始终加入 Mock 作为最终降级
@@ -123,6 +139,7 @@ public static class ServiceCollectionExtensions
             MaxIterations = options.MaxIterations,
             MaxAttempts = options.MaxAttempts,
             MaxCost = options.MaxCost,
+            CliTimeoutSeconds = options.CliTimeoutSeconds,
         };
         services.AddSingleton(convergence);
         services.AddSingleton<OrchestratorEngine>(sp => new OrchestratorEngine(
@@ -139,10 +156,32 @@ public static class ServiceCollectionExtensions
     }
 }
 
+/// <summary>
+/// 在系统 PATH 中查找可执行文件，找不到返回 null。
+/// </summary>
+file static class PathHelper
+{
+    public static string? FindInPath(string fileName)
+    {
+        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var full = Path.Combine(dir.Trim(), fileName);
+            if (File.Exists(full))
+            {
+                return full;
+            }
+        }
+
+        return null;
+    }
+}
+
 public record OrchestratorOptions
 {
     public bool UseMock { get; init; } = false;
     public int MaxIterations { get; init; } = 20;
     public int MaxAttempts { get; init; } = 3;
     public double MaxCost { get; init; } = 10.0;
+    public int CliTimeoutSeconds { get; init; } = 120;
 }
