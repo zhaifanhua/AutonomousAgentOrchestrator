@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -11,27 +11,32 @@ namespace AgentOrchestrator.Infrastructure.Persistence;
 /// </summary>
 public class JsonStateStore(string workspacePath, ILogger<JsonStateStore> logger) : IStateStore
 {
-    private readonly string _stateFile = Path.Combine(workspacePath, "state.json");
-    private readonly string _stateTempFile = Path.Combine(workspacePath, "state.json.tmp");
-    private readonly SemaphoreSlim _writeLock = new(1, 1);
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private readonly string _stateFile = Path.Combine(workspacePath, "state.json");
+    private readonly string _stateTempFile = Path.Combine(workspacePath, "state.json.tmp");
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     public async Task<OrchestratorState?> LoadAsync(CancellationToken ct)
     {
         if (!File.Exists(_stateFile))
+        {
             return null;
+        }
 
         try
         {
             var json = await File.ReadAllTextAsync(_stateFile, ct);
             var state = JsonSerializer.Deserialize<OrchestratorState>(json, JsonOptions);
-            logger.LogInformation("状态已加载，版本={Version}, 队列长度={QueueLen}",
-                state?.Version, state?.Queue.Count);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("状态已加载，版本={Version}, 队列长度={QueueLen}",
+                    state?.Version, state?.Queue.Count);
+            }
             return state;
         }
         catch (Exception ex)
@@ -55,7 +60,10 @@ public class JsonStateStore(string workspacePath, ILogger<JsonStateStore> logger
 
             // 原子替换
             File.Move(_stateTempFile, _stateFile, overwrite: true);
-            logger.LogDebug("状态已保存，版本={Version}", state.Version);
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("状态已保存，版本={Version}", state.Version);
+            }
         }
         catch (Exception ex)
         {

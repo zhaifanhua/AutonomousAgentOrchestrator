@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.StateMachine;
+using AgentOrchestrator.Core.StateMachine;
 
 namespace AgentOrchestrator.Tests;
 

@@ -57,7 +57,7 @@ public record AgentTask
     /// <summary>
     /// 创建状态迁移后的新任务记录（不可变）
     /// </summary>
-    public AgentTask WithStatus(AgentTaskStatus newStatus, string reason = "")
+    public AgentTask WithStatus(AgentTaskStatus newStatus, string _reason = "")
     {
         StateMachineValidator.Validate(Status, newStatus);
         return this with

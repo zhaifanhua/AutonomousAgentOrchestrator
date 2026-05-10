@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Agents.BuiltIn;
+using AgentOrchestrator.Agents.BuiltIn;
 using AgentOrchestrator.Core.Interfaces;
 using AgentOrchestrator.Infrastructure.EventBus;
 using AgentOrchestrator.Infrastructure.LLMClients;
@@ -74,13 +74,17 @@ public static class ServiceCollectionExtensions
 
                 var claudePath = Environment.GetEnvironmentVariable("CLAUDE_CLI_PATH");
                 if (!string.IsNullOrEmpty(claudePath) && File.Exists(claudePath))
+                {
                     clients.Add(new ClaudeCliClient(claudePath, sandbox,
                         sp.GetRequiredService<ILogger<ClaudeCliClient>>()));
+                }
 
                 var codexPath = Environment.GetEnvironmentVariable("CODEX_CLI_PATH");
                 if (!string.IsNullOrEmpty(codexPath) && File.Exists(codexPath))
+                {
                     clients.Add(new CodexCliClient(codexPath, sandbox,
                         sp.GetRequiredService<ILogger<CodexCliClient>>()));
+                }
 
                 // 始终加入 Mock 作为最终降级
                 clients.Add(new MockLLMClient());

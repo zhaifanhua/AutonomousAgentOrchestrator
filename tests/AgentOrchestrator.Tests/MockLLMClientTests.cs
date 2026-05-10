@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Infrastructure.LLMClients;
 using System.Text.Json;
 
@@ -38,7 +38,9 @@ public class MockLLMClientTests
         var tokens = new List<LLMToken>();
 
         await foreach (var token in _client.StreamAsync(spec, CancellationToken.None))
+        {
             tokens.Add(token);
+        }
 
         Assert.NotEmpty(tokens);
         Assert.True(tokens.Last().IsLast);

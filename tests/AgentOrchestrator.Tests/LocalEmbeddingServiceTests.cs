@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Infrastructure.Memory;
+using AgentOrchestrator.Infrastructure.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentOrchestrator.Tests;
@@ -11,8 +11,11 @@ public class LocalEmbeddingServiceTests
     public async Task Embed_ShouldReturnNonZeroVector()
     {
         var embedding = await _service.EmbedAsync("hello world", CancellationToken.None);
-        Assert.True(embedding.Length > 0);
-        Assert.True(embedding.Span.ToArray().Any(v => v != 0f));
+        Assert.NotEqual(0, embedding.Length);
+        // 向量至少有一个非零分量（MinHash 哈希不为全零）
+        var arr = embedding.Span.ToArray();
+        var nonzero = arr.Count(static v => v != 0f);
+        Assert.NotEqual(0, nonzero);
     }
 
     [Fact]
@@ -31,6 +34,6 @@ public class LocalEmbeddingServiceTests
         var b = await _service.EmbedAsync("machine learning neural network", CancellationToken.None);
         var sim = _service.CosineSimilarity(a, b);
         // 相似度应低于高度相似文本，但不严格限定阈值（取决于嵌入算法）
-        Assert.True(sim >= 0f && sim <= 1f);
+        Assert.InRange(sim, 0f, 1f);
     }
 }

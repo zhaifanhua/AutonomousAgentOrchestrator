@@ -1,4 +1,4 @@
-﻿namespace AgentOrchestrator.Core.StateMachine;
+namespace AgentOrchestrator.Core.StateMachine;
 
 /// <summary>
 /// 非法状态迁移异常
@@ -31,7 +31,9 @@ public static class StateMachineValidator
     public static void Validate(AgentTaskStatus from, AgentTaskStatus to)
     {
         if (!AllowedTransitions.TryGetValue(from, out var allowed) || !allowed.Contains(to))
+        {
             throw new InvalidTransitionException(from, to);
+        }
     }
 
     /// <summary>

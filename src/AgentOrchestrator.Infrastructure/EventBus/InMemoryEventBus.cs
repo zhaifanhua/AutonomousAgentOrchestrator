@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
@@ -20,7 +20,9 @@ public class InMemoryEventBus(ILogger<InMemoryEventBus> logger) : IEventBus
     {
         var eventType = typeof(T);
         if (!_handlers.TryGetValue(eventType, out var handlers))
+        {
             return;
+        }
 
         List<object> snapshot;
         await _lock.WaitAsync(ct);
@@ -40,18 +42,6 @@ public class InMemoryEventBus(ILogger<InMemoryEventBus> logger) : IEventBus
         await Task.WhenAll(tasks);
     }
 
-    private async Task InvokeHandler<T>(Func<T, Task> handler, T @event) where T : DomainEvent
-    {
-        try
-        {
-            await handler(@event);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "事件处理器异常，事件类型={EventType}", typeof(T).Name);
-        }
-    }
-
     public IDisposable Subscribe<T>(Func<T, Task> handler) where T : DomainEvent
     {
         var eventType = typeof(T);
@@ -67,13 +57,27 @@ public class InMemoryEventBus(ILogger<InMemoryEventBus> logger) : IEventBus
         return new SubscriptionHandle(() => Unsubscribe(eventType, (object)handler));
     }
 
+    private async Task InvokeHandler<T>(Func<T, Task> handler, T @event) where T : DomainEvent
+    {
+        try
+        {
+            await handler(@event);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "事件处理器异常，事件类型={EventType}", typeof(T).Name);
+        }
+    }
+
     private void Unsubscribe(Type eventType, object handler)
     {
         _lock.Wait();
         try
         {
             if (_handlers.TryGetValue(eventType, out var handlers))
+            {
                 handlers.Remove(handler);
+            }
         }
         finally
         {

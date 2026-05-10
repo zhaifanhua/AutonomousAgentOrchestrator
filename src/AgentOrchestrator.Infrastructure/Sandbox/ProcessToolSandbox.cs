@@ -17,8 +17,11 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
 {
     public async Task<ToolResult> ExecuteAsync(ToolInvocation inv, CancellationToken ct)
     {
-        logger.LogInformation("执行工具: {Command} {Args}",
-            inv.Command, string.Join(" ", inv.Arguments.Select(EscapeArgForLog)));
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("执行工具: {Command} {Args}",
+                inv.Command, string.Join(" ", inv.Arguments.Select(EscapeArgForLog)));
+        }
 
         var sw = Stopwatch.StartNew();
         string? stdinFile = null;
@@ -39,8 +42,8 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
             var stdoutBuilder = new System.Text.StringBuilder();
             var stderrBuilder = new System.Text.StringBuilder();
 
-            process.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutBuilder.AppendLine(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderrBuilder.AppendLine(e.Data); };
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) { stdoutBuilder.AppendLine(e.Data); } };
+            process.ErrorDataReceived += (_, e) => { if (e.Data != null) { stderrBuilder.AppendLine(e.Data); } };
 
             process.Start();
             process.BeginOutputReadLine();
@@ -81,14 +84,19 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
                 sw.Elapsed,
                 peakMemory);
 
-            logger.LogInformation("工具完成 ExitCode={Code}, Duration={Ms}ms",
-                result.ExitCode, sw.ElapsedMilliseconds);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("工具完成 ExitCode={Code}, Duration={Ms}ms",
+                    result.ExitCode, sw.ElapsedMilliseconds);
+            }
             return result;
         }
         finally
         {
             if (stdinFile != null && File.Exists(stdinFile))
+            {
                 File.Delete(stdinFile);
+            }
         }
     }
 
@@ -105,10 +113,14 @@ public class ProcessToolSandbox(ILogger<ProcessToolSandbox> logger) : IToolSandb
         };
 
         foreach (var arg in inv.Arguments)
+        {
             psi.ArgumentList.Add(arg);        // 安全的参数数组传递
+        }
 
         foreach (var (k, v) in inv.Environment)
+        {
             psi.Environment[k] = v;
+        }
 
         return psi;
     }

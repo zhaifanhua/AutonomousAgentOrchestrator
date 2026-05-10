@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Infrastructure.Orchestration;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
@@ -13,21 +13,6 @@ namespace AgentOrchestrator.Cli.Commands;
 /// </summary>
 public class DryRunCommand(IServiceProvider services) : AsyncCommand<DryRunCommand.Settings>
 {
-    public class Settings : CommandSettings
-    {
-        [CommandOption("-w|--workspace")]
-        [Description("Workspace 根路径")]
-        public string Workspace { get; set; } = "./workspace/dry-run";
-
-        [CommandOption("-r|--requirement")]
-        [Description("需求文件路径")]
-        public string RequirementRef { get; set; } = "requirements.md";
-
-        [CommandOption("--max-iterations")]
-        [Description("最大迭代轮次（dry-run 默认 3）")]
-        public int MaxIterations { get; set; } = 3;
-    }
-
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
         AnsiConsole.MarkupLine("[bold yellow]>>> DRY RUN 模式（使用 Mock LLM，不消耗真实 Token）<<<[/]");
@@ -66,4 +51,19 @@ public class DryRunCommand(IServiceProvider services) : AsyncCommand<DryRunComma
             $"完成: [green]{state.Completed.Count}[/]  失败: [red]{state.Failed.Count}[/]  " +
             $"轮次: {state.Convergence.CurrentIteration}/{state.Convergence.MaxIterations}"
         ).Header("[bold]Dry-Run 状态[/]");
+
+    public class Settings : CommandSettings
+    {
+        [CommandOption("-w|--workspace")]
+        [Description("Workspace 根路径")]
+        public string Workspace { get; set; } = "./workspace/dry-run";
+
+        [CommandOption("-r|--requirement")]
+        [Description("需求文件路径")]
+        public string RequirementRef { get; set; } = "requirements.md";
+
+        [CommandOption("--max-iterations")]
+        [Description("最大迭代轮次（dry-run 默认 3）")]
+        public int MaxIterations { get; set; } = 3;
+    }
 }

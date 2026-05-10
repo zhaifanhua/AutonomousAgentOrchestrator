@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Cli;
+using AgentOrchestrator.Cli;
 using AgentOrchestrator.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console.Cli;
@@ -58,7 +58,13 @@ return await app.RunAsync(args);
 // 辅助：解析命名参数值
 static string? GetArg(string[] args, params string[] names)
 {
-    for (int i = 0; i < args.Length - 1; i++)
-        if (names.Contains(args[i])) return args[i + 1];
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (names.Contains(args[i]))
+        {
+            return args[i + 1];
+        }
+    }
+
     return null;
 }

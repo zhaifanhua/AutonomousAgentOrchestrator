@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
@@ -23,7 +23,11 @@ public class FallbackLLMClient(
         var lastEx = (Exception?)null;
         foreach (var client in clients)
         {
-            if (!client.SupportedModels.Contains(spec.ModelId)) continue;
+            if (!client.SupportedModels.Contains(spec.ModelId))
+            {
+                continue;
+            }
+
             try
             {
                 return await client.ExecuteAsync(spec, ct);
@@ -43,9 +47,16 @@ public class FallbackLLMClient(
     {
         foreach (var client in clients)
         {
-            if (!client.SupportedModels.Contains(spec.ModelId)) continue;
+            if (!client.SupportedModels.Contains(spec.ModelId))
+            {
+                continue;
+            }
+
             await foreach (var token in client.StreamAsync(spec, ct))
+            {
                 yield return token;
+            }
+
             yield break;
         }
         throw new LLMClientException($"无可用客户端支持模型={spec.ModelId}");

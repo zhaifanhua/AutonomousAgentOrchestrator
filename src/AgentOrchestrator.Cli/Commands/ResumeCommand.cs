@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Infrastructure.Orchestration;
+using AgentOrchestrator.Infrastructure.Orchestration;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -11,13 +11,6 @@ namespace AgentOrchestrator.Cli.Commands;
 /// </summary>
 public class ResumeCommand(IServiceProvider services) : AsyncCommand<ResumeCommand.Settings>
 {
-    public class Settings : CommandSettings
-    {
-        [CommandOption("-w|--workspace")]
-        [Description("Workspace 根路径")]
-        public string Workspace { get; set; } = "./workspace";
-    }
-
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
         AnsiConsole.MarkupLine($"[yellow]从 state.json 恢复编排...[/] workspace={settings.Workspace}");
@@ -30,5 +23,12 @@ public class ResumeCommand(IServiceProvider services) : AsyncCommand<ResumeComma
         var status = orchestrator.GetStatus();
         AnsiConsole.MarkupLine($"[bold green]恢复完成[/] 已完成={status.Completed.Count}");
         return 0;
+    }
+
+    public class Settings : CommandSettings
+    {
+        [CommandOption("-w|--workspace")]
+        [Description("Workspace 根路径")]
+        public string Workspace { get; set; } = "./workspace";
     }
 }

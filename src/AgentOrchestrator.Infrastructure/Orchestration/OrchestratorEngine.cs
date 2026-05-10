@@ -36,13 +36,16 @@ public class OrchestratorEngine(
     // 并行度信号量（同时最多 3 个 Agent 执行）
     private readonly SemaphoreSlim _parallelSem = new(3, 3);
 
+    private readonly Lock _stateLock = new();
     private OrchestratorState _state = new();
-    private readonly object _stateLock = new();
     private int _activeTaskCount = 0;
 
     public async Task RunAsync(string requirementRef, CancellationToken ct)
     {
-        logger.LogInformation("编排器启动，需求文件: {Ref}", requirementRef);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("编排器启动，需求文件: {Ref}", requirementRef);
+        }
         _state = await stateStore.LoadAsync(ct) ?? new OrchestratorState
         {
             Project = new ProjectContext
@@ -56,7 +59,7 @@ public class OrchestratorEngine(
         OrchestratorMetrics.RegisterActiveTasksGauge(() => _activeTaskCount);
 
         // 初始任务入队
-        if (!_state.Queue.Any() && !_state.Completed.Any())
+        if (_state.Queue.Count == 0 && _state.Completed.Count == 0)
         {
             await EnqueueAsync(new AgentTask
             {
@@ -69,18 +72,28 @@ public class OrchestratorEngine(
         {
             // resume：恢复队列
             foreach (var task in _state.Queue)
+            {
                 await _taskChannel.Writer.WriteAsync(task, ct);
+            }
         }
 
         await ProcessLoopAsync(ct);
     }
+
+    /// <summary>
+    /// 获取当前状态快照（用于 status 命令）
+    /// </summary>
+    public OrchestratorState GetStatus() => _state;
 
     private async Task ProcessLoopAsync(CancellationToken ct)
     {
         await foreach (var task in _taskChannel.Reader.ReadAllAsync(ct))
         {
             // 收敛检测（每次出队前检查）
-            if (!CheckConvergence(task)) break;
+            if (!CheckConvergence(task))
+            {
+                break;
+            }
 
             // 预算检查
             if (_state.Budget.IsExceeded)
@@ -101,8 +114,11 @@ public class OrchestratorEngine(
         }
 
         _taskChannel.Writer.TryComplete();
-        logger.LogInformation("编排器结束，完成={Done} 失败={Failed}",
-            _state.Completed.Count, _state.Failed.Count);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("编排器结束，完成={Done} 失败={Failed}",
+                _state.Completed.Count, _state.Failed.Count);
+        }
     }
 
     private async Task ExecuteTaskAsync(AgentTask task, CancellationToken ct)
@@ -183,11 +199,15 @@ public class OrchestratorEngine(
 
             // 将后续任务入队
             foreach (var next in result.NextTasks)
+            {
                 await EnqueueAsync(next, ct);
+            }
 
             // 无后续任务且全部完成 → 关闭通道
-            if (!result.NextTasks.Any() && _taskChannel.Reader.Count == 0 && _activeTaskCount <= 1)
+            if (result.NextTasks.Count == 0 && _taskChannel.Reader.Count == 0 && _activeTaskCount <= 1)
+            {
                 _taskChannel.Writer.TryComplete();
+            }
         }
         else
         {
@@ -262,9 +282,13 @@ public class OrchestratorEngine(
         await TransitionStateAsync(task, AgentTaskStatus.TimedOut, "任务超时", ct);
         var retry = task with { Attempt = task.Attempt + 1, Status = AgentTaskStatus.Init };
         if (retry.Attempt < convergence.MaxAttempts)
+        {
             await EnqueueAsync(retry, ct);
+        }
         else
+        {
             MoveToFailed(task with { Status = AgentTaskStatus.Failed });
+        }
     }
 
     private async Task HandleFailureAsync(AgentTask task, string reason, CancellationToken ct)
@@ -273,7 +297,7 @@ public class OrchestratorEngine(
         MoveToFailed(task with { Status = AgentTaskStatus.Failed });
     }
 
-    private bool CheckConvergence(AgentTask task)
+    private bool CheckConvergence(AgentTask _)
     {
         var conv = _state.Convergence;
         if (conv.CurrentIteration >= conv.MaxIterations)
@@ -287,7 +311,11 @@ public class OrchestratorEngine(
 
     private bool AreDependenciesMet(AgentTask task)
     {
-        if (task.DependsOn.Count == 0) return true;
+        if (task.DependsOn.Count == 0)
+        {
+            return true;
+        }
+
         var completedIds = _state.Completed.Select(t => t.Id).ToHashSet();
         return task.DependsOn.All(id => completedIds.Contains(id));
     }
@@ -307,7 +335,7 @@ public class OrchestratorEngine(
         {
             _state = _state with
             {
-                Queue = _state.Queue.Where(t => t.Id != task.Id).ToList(),
+                Queue = [.. _state.Queue.Where(t => t.Id != task.Id)],
                 Completed = [.. _state.Completed, task],
                 Convergence = _state.Convergence with
                 {
@@ -323,7 +351,7 @@ public class OrchestratorEngine(
         {
             _state = _state with
             {
-                Queue = _state.Queue.Where(t => t.Id != task.Id).ToList(),
+                Queue = [.. _state.Queue.Where(t => t.Id != task.Id)],
                 Failed = [.. _state.Failed, task]
             };
         }
@@ -362,9 +390,14 @@ public class OrchestratorEngine(
     {
         var budget = _state.Budget;
         if (budget.IsTokenBudgetExceeded)
+        {
             await eventBus.PublishAsync(new BudgetExceeded("tokens", budget.TotalTokensUsed, budget.MaxTokens), ct);
+        }
+
         if (budget.IsCostBudgetExceeded)
+        {
             await eventBus.PublishAsync(new BudgetExceeded("cost", budget.TotalCostUsed, budget.MaxCost), ct);
+        }
     }
 
     private async Task SaveStateAsync(CancellationToken ct)
@@ -377,11 +410,6 @@ public class OrchestratorEngine(
         }
         await stateStore.SaveAsync(snapshot, ct);
     }
-
-    /// <summary>
-    /// 获取当前状态快照（用于 status 命令）
-    /// </summary>
-    public OrchestratorState GetStatus() => _state;
 }
 
 /// <summary>

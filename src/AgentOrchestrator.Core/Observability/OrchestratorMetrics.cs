@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace AgentOrchestrator.Core.Observability;
@@ -9,8 +9,6 @@ namespace AgentOrchestrator.Core.Observability;
 public static class OrchestratorMetrics
 {
     public const string MeterName = "AgentOrchestrator";
-
-    private static readonly Meter Meter = new(MeterName, "1.0.0");
 
     /// <summary>
     /// 已完成任务总数
@@ -67,13 +65,15 @@ public static class OrchestratorMetrics
         Meter.CreateCounter<int>("orchestrator.semantic_cache.hits", "hits", "语义缓存命中次数");
 
     /// <summary>
+    /// ActivitySource 用于链路追踪
+    /// </summary>
+    public static readonly ActivitySource ActivitySource = new(MeterName, "1.0.0");
+
+    private static readonly Meter Meter = new(MeterName, "1.0.0");
+
+    /// <summary>
     /// 活跃任务数（ObservableGauge）
     /// </summary>
     public static void RegisterActiveTasksGauge(Func<int> valueGetter) =>
         Meter.CreateObservableGauge("orchestrator.tasks.active", valueGetter, "tasks", "当前活跃任务数");
-
-    /// <summary>
-    /// ActivitySource 用于链路追踪
-    /// </summary>
-    public static readonly ActivitySource ActivitySource = new(MeterName, "1.0.0");
 }

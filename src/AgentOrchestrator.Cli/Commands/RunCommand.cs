@@ -11,6 +11,25 @@ namespace AgentOrchestrator.Cli.Commands;
 /// </summary>
 public class RunCommand(IServiceProvider services) : AsyncCommand<RunCommand.Settings>
 {
+    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
+    {
+        AnsiConsole.Write(new FigletText("Agent Orchestrator").Color(Color.Aqua));
+        AnsiConsole.MarkupLine($"[green]工作目录:[/] {settings.Workspace}");
+        AnsiConsole.MarkupLine($"[green]需求文件:[/] {settings.RequirementRef}");
+
+        var orchestrator = services.GetRequiredService<OrchestratorEngine>();
+        await AnsiConsole.Status()
+            .StartAsync("编排器运行中...", async ctx =>
+            {
+                ctx.Spinner(Spinner.Known.Dots);
+                await orchestrator.RunAsync(settings.RequirementRef, ct);
+            });
+
+        var status = orchestrator.GetStatus();
+        AnsiConsole.MarkupLine($"\n[bold green]完成[/] 已完成={status.Completed.Count} 失败={status.Failed.Count}");
+        return 0;
+    }
+
     public class Settings : CommandSettings
     {
         [CommandOption("-w|--workspace")]
@@ -32,24 +51,5 @@ public class RunCommand(IServiceProvider services) : AsyncCommand<RunCommand.Set
         [CommandOption("--max-cost")]
         [Description("最大成本（美元）")]
         public double MaxCost { get; set; } = 10.0;
-    }
-
-    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
-    {
-        AnsiConsole.Write(new FigletText("Agent Orchestrator").Color(Color.Aqua));
-        AnsiConsole.MarkupLine($"[green]工作目录:[/] {settings.Workspace}");
-        AnsiConsole.MarkupLine($"[green]需求文件:[/] {settings.RequirementRef}");
-
-        var orchestrator = services.GetRequiredService<OrchestratorEngine>();
-        await AnsiConsole.Status()
-            .StartAsync("编排器运行中...", async ctx =>
-            {
-                ctx.Spinner(Spinner.Known.Dots);
-                await orchestrator.RunAsync(settings.RequirementRef, ct);
-            });
-
-        var status = orchestrator.GetStatus();
-        AnsiConsole.MarkupLine($"\n[bold green]完成[/] 已完成={status.Completed.Count} 失败={status.Failed.Count}");
-        return 0;
     }
 }

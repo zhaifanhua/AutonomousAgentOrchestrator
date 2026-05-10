@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Agents.Base;
+using AgentOrchestrator.Agents.Base;
 using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 
@@ -10,10 +10,6 @@ namespace AgentOrchestrator.Agents.BuiltIn;
 /// </summary>
 public class PlannerAgent(ILLMClient llmClient) : AgentBase(llmClient)
 {
-    public override string Name => "Planner";
-    public override string Version => "1.0";
-    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "plan" };
-
     private const string SystemPrompt = """
         你是一个软件架构规划师。根据需求文档，输出严格的 JSON 格式规划（不得有任何 markdown 包裹）：
         {
@@ -25,6 +21,10 @@ public class PlannerAgent(ILLMClient llmClient) : AgentBase(llmClient)
           "notes": ""
         }
         """;
+
+    public override string Name => "Planner";
+    public override string Version => "1.0";
+    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "plan" };
 
     public override async Task<AgentResult> ExecuteAsync(AgentContext ctx, CancellationToken ct)
     {
@@ -46,7 +46,9 @@ public class PlannerAgent(ILLMClient llmClient) : AgentBase(llmClient)
 
         var plan = await CallLLMWithSchemaAsync<PlannerOutput>(spec, ctx, ct);
         if (plan == null)
+        {
             return AgentResult.Fail("Planner 未能生成合法计划");
+        }
 
         // 持久化规划结果
         var planPath = $"plans/{ctx.Task.Id:N}.json";
@@ -75,9 +77,12 @@ public class PlannerAgent(ILLMClient llmClient) : AgentBase(llmClient)
 
     private static List<AgentTask> GenerateNextTasks(PlannerOutput plan, AgentTask parent)
     {
-        if (plan.Steps == null || plan.Steps.Length == 0) return [];
+        if (plan.Steps == null || plan.Steps.Length == 0)
+        {
+            return [];
+        }
 
-        return plan.Steps.Select(step => new AgentTask
+        return [.. plan.Steps.Select(step => new AgentTask
         {
             Type = step.Agent ?? "dev",
             InputRef = $"plans/{parent.Id:N}.json",
@@ -87,7 +92,7 @@ public class PlannerAgent(ILLMClient llmClient) : AgentBase(llmClient)
                 ["stepOrder"] = step.Order.ToString(),
                 ["stepDesc"] = step.Description ?? string.Empty
             }
-        }).ToList();
+        })];
     }
 
     private record PlannerOutput(

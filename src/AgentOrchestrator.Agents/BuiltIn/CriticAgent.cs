@@ -9,10 +9,6 @@ namespace AgentOrchestrator.Agents.BuiltIn;
 /// </summary>
 public class CriticAgent(ILLMClient llmClient) : AgentBase(llmClient)
 {
-    public override string Name => "Critic";
-    public override string Version => "1.0";
-    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "critique", "review" };
-
     private const string SystemPrompt = """
         你是一个代码审查专家。审查代码变更，输出严格 JSON：
         {
@@ -23,6 +19,10 @@ public class CriticAgent(ILLMClient llmClient) : AgentBase(llmClient)
           "notes": ""
         }
         """;
+
+    public override string Name => "Critic";
+    public override string Version => "1.0";
+    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "critique", "review" };
 
     public override async Task<AgentResult> ExecuteAsync(AgentContext ctx, CancellationToken ct)
     {
@@ -38,7 +38,9 @@ public class CriticAgent(ILLMClient llmClient) : AgentBase(llmClient)
 
         var review = await CallLLMWithSchemaAsync<CriticOutput>(spec, ctx, ct);
         if (review == null)
+        {
             return AgentResult.Fail("Critic 未能生成审查结果");
+        }
 
         // 写入审查报告
         var reportPath = $"reports/critic-{ctx.Task.Id:N}.json";

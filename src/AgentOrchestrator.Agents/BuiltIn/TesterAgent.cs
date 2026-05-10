@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Agents.Base;
+using AgentOrchestrator.Agents.Base;
 using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 
@@ -10,10 +10,6 @@ namespace AgentOrchestrator.Agents.BuiltIn;
 /// </summary>
 public class TesterAgent(ILLMClient llmClient, IToolSandbox sandbox) : AgentBase(llmClient)
 {
-    public override string Name => "Tester";
-    public override string Version => "1.0";
-    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "test", "verify" };
-
     private const string SystemPrompt = """
         你是一个测试工程师。根据代码变更，生成测试计划并分析测试结果，输出严格 JSON：
         {
@@ -25,6 +21,10 @@ public class TesterAgent(ILLMClient llmClient, IToolSandbox sandbox) : AgentBase
           "notes": ""
         }
         """;
+
+    public override string Name => "Tester";
+    public override string Version => "1.0";
+    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "test", "verify" };
 
     public override async Task<AgentResult> ExecuteAsync(AgentContext ctx, CancellationToken ct)
     {
@@ -38,7 +38,9 @@ public class TesterAgent(ILLMClient llmClient, IToolSandbox sandbox) : AgentBase
 
         var plan = await CallLLMWithSchemaAsync<TesterOutput>(spec, ctx, ct);
         if (plan == null)
+        {
             return AgentResult.Fail("Tester 未能生成测试计划");
+        }
 
         // 实际执行测试命令
         var testResult = await RunTestCommandsAsync(plan.ExecutedCommands ?? ["dotnet test"], ctx, ct);
@@ -88,7 +90,7 @@ public class TesterAgent(ILLMClient llmClient, IToolSandbox sandbox) : AgentBase
         };
     }
 
-    private async Task<string> LoadCodeContextAsync(AgentContext ctx, CancellationToken ct)
+    private static async Task<string> LoadCodeContextAsync(AgentContext ctx, CancellationToken ct)
     {
         try
         {
@@ -112,13 +114,16 @@ public class TesterAgent(ILLMClient llmClient, IToolSandbox sandbox) : AgentBase
                 Command: exe,
                 Arguments: args,
                 WorkingDirectory: ctx.Workspace.RootPath,
-                Environment: new Dictionary<string, string>(),
+                Environment: [],
                 Timeout: TimeSpan.FromMinutes(5),
                 StdInput: null,
                 AllowedPaths: ctx.Project.PathsAllowlist.ToHashSet());
 
             var result = await sandbox.ExecuteAsync(inv, ct);
-            if (result.ExitCode != 0) return result;
+            if (result.ExitCode != 0)
+            {
+                return result;
+            }
         }
         return new ToolResult(0, "所有测试命令成功", string.Empty, TimeSpan.Zero, 0);
     }

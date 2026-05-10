@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Agents.Base;
+using AgentOrchestrator.Agents.Base;
 using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 
@@ -10,10 +10,6 @@ namespace AgentOrchestrator.Agents.BuiltIn;
 /// </summary>
 public class ReflectorAgent(ILLMClient llmClient) : AgentBase(llmClient)
 {
-    public override string Name => "Reflector";
-    public override string Version => "1.0";
-    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "reflect" };
-
     private const string SystemPrompt = """
         你是一个 AI 系统的元认知分析师。分析执行历史，输出策略调整建议，严格 JSON：
         {
@@ -24,6 +20,10 @@ public class ReflectorAgent(ILLMClient llmClient) : AgentBase(llmClient)
           "notes": ""
         }
         """;
+
+    public override string Name => "Reflector";
+    public override string Version => "1.0";
+    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "reflect" };
 
     public override async Task<AgentResult> ExecuteAsync(AgentContext ctx, CancellationToken ct)
     {
@@ -43,7 +43,9 @@ public class ReflectorAgent(ILLMClient llmClient) : AgentBase(llmClient)
 
         var reflection = await CallLLMWithSchemaAsync<ReflectorOutput>(spec, ctx, ct);
         if (reflection == null)
+        {
             return AgentResult.Fail("Reflector 未能生成反思结果");
+        }
 
         // 将经验教训写入长期记忆
         foreach (var lesson in reflection.Lessons ?? [])

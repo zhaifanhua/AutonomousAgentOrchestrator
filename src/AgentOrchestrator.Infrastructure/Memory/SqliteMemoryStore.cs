@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -16,37 +16,18 @@ public class SqliteMemoryStore(
     IEmbeddingService embedding,
     ILogger<SqliteMemoryStore> logger) : IMemoryStore, IAsyncDisposable
 {
-    private SqliteConnection? _conn;
     private const double ConfidenceThreshold = 0.3;
+    private SqliteConnection? _conn;
 
     public async Task InitializeAsync(CancellationToken ct)
     {
         _conn = new SqliteConnection($"Data Source={dbPath}");
         await _conn.OpenAsync(ct);
         await CreateSchemaAsync(ct);
-        logger.LogInformation("语义记忆 SQLite 已初始化: {Path}", dbPath);
-    }
-
-    private async Task CreateSchemaAsync(CancellationToken ct)
-    {
-        await using var cmd = _conn!.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS memories (
-                id TEXT PRIMARY KEY,
-                content TEXT NOT NULL,
-                embedding TEXT NOT NULL,
-                type INTEGER NOT NULL,
-                status INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                last_accessed_at TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0,
-                decay_factor REAL NOT NULL DEFAULT 0.01,
-                confidence REAL NOT NULL DEFAULT 1.0,
-                tags TEXT NOT NULL DEFAULT '[]',
-                related_task_id TEXT
-            )
-            """;
-        await cmd.ExecuteNonQueryAsync(ct);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("语义记忆 SQLite 已初始化: {Path}", dbPath);
+        }
     }
 
     public async Task StoreAsync(MemoryEntry entry, CancellationToken ct)
@@ -95,7 +76,9 @@ public class SqliteMemoryStore(
 
         // 更新 AccessCount 和 LastAccessedAt
         foreach (var entry in ranked)
+        {
             await UpdateAccessAsync(entry.Id, ct);
+        }
 
         return ranked;
     }
@@ -121,14 +104,73 @@ public class SqliteMemoryStore(
             AND status != 0
             """;
         var deleted = await cmd.ExecuteNonQueryAsync(ct);
-        logger.LogInformation("记忆压缩完成，清理 {Count} 条低权重记忆", deleted);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("记忆压缩完成，清理 {Count} 条低权重记忆", deleted);
+        }
     }
 
     public async Task<IReadOnlyList<MemoryEntry>> RecallByTagAsync(string tag, CancellationToken ct)
     {
         EnsureInitialized();
         var all = await LoadAllActiveAsync(ct);
-        return all.Where(e => e.Tags.Contains(tag)).ToList();
+        return [.. all.Where(e => e.Tags.Contains(tag))];
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_conn != null)
+        {
+            await _conn.DisposeAsync();
+            _conn = null;
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    private static MemoryEntry MapRow(SqliteDataReader r)
+    {
+        var embJson = r.GetString(r.GetOrdinal("embedding"));
+        var floats = JsonSerializer.Deserialize<float[]>(embJson) ?? [];
+        return new MemoryEntry
+        {
+            Id = Guid.Parse(r.GetString(r.GetOrdinal("id"))),
+            Content = r.GetString(r.GetOrdinal("content")),
+            Embedding = new ReadOnlyMemory<float>(floats),
+            Type = (MemoryType)r.GetInt32(r.GetOrdinal("type")),
+            Status = (MemoryStatus)r.GetInt32(r.GetOrdinal("status")),
+            CreatedAt = DateTime.Parse(r.GetString(r.GetOrdinal("created_at"))),
+            LastAccessedAt = DateTime.Parse(r.GetString(r.GetOrdinal("last_accessed_at"))),
+            AccessCount = r.GetInt32(r.GetOrdinal("access_count")),
+            DecayFactor = r.GetDouble(r.GetOrdinal("decay_factor")),
+            Confidence = r.GetDouble(r.GetOrdinal("confidence")),
+            Tags = JsonSerializer.Deserialize<List<string>>(r.GetString(r.GetOrdinal("tags"))) ?? [],
+            RelatedTaskId = r.IsDBNull(r.GetOrdinal("related_task_id"))
+                ? null
+                : Guid.Parse(r.GetString(r.GetOrdinal("related_task_id")))
+        };
+    }
+
+    private async Task CreateSchemaAsync(CancellationToken ct)
+    {
+        await using var cmd = _conn!.CreateCommand();
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                type INTEGER NOT NULL,
+                status INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                last_accessed_at TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                decay_factor REAL NOT NULL DEFAULT 0.01,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                tags TEXT NOT NULL DEFAULT '[]',
+                related_task_id TEXT
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<List<MemoryEntry>> LoadAllActiveAsync(CancellationToken ct)
@@ -158,37 +200,11 @@ public class SqliteMemoryStore(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static MemoryEntry MapRow(SqliteDataReader r)
-    {
-        var embJson = r.GetString(r.GetOrdinal("embedding"));
-        var floats = JsonSerializer.Deserialize<float[]>(embJson) ?? [];
-        return new MemoryEntry
-        {
-            Id = Guid.Parse(r.GetString(r.GetOrdinal("id"))),
-            Content = r.GetString(r.GetOrdinal("content")),
-            Embedding = new ReadOnlyMemory<float>(floats),
-            Type = (MemoryType)r.GetInt32(r.GetOrdinal("type")),
-            Status = (MemoryStatus)r.GetInt32(r.GetOrdinal("status")),
-            CreatedAt = DateTime.Parse(r.GetString(r.GetOrdinal("created_at"))),
-            LastAccessedAt = DateTime.Parse(r.GetString(r.GetOrdinal("last_accessed_at"))),
-            AccessCount = r.GetInt32(r.GetOrdinal("access_count")),
-            DecayFactor = r.GetDouble(r.GetOrdinal("decay_factor")),
-            Confidence = r.GetDouble(r.GetOrdinal("confidence")),
-            Tags = JsonSerializer.Deserialize<List<string>>(r.GetString(r.GetOrdinal("tags"))) ?? [],
-            RelatedTaskId = r.IsDBNull(r.GetOrdinal("related_task_id"))
-                ? null
-                : Guid.Parse(r.GetString(r.GetOrdinal("related_task_id")))
-        };
-    }
-
     private void EnsureInitialized()
     {
         if (_conn == null)
+        {
             throw new InvalidOperationException("SqliteMemoryStore 未初始化，请先调用 InitializeAsync");
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_conn != null) await _conn.DisposeAsync();
+        }
     }
 }

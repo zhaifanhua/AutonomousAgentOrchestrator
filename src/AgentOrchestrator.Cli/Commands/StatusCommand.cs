@@ -9,17 +9,16 @@ namespace AgentOrchestrator.Cli.Commands;
 /// <summary>
 /// status 命令：读取并展示 state.json 当前状态
 /// </summary>
-public class StatusCommand(IServiceProvider services) : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand : AsyncCommand<StatusCommand.Settings>
 {
-    public class Settings : CommandSettings
+    private static readonly JsonSerializerOptions StateJsonOptions = new()
     {
-        [CommandOption("-w|--workspace")]
-        [Description("Workspace 根路径")]
-        public string Workspace { get; set; } = "./workspace";
+        PropertyNameCaseInsensitive = true,
+    };
 
-        [CommandOption("--json")]
-        [Description("以 JSON 格式输出")]
-        public bool Json { get; set; }
+    // services 由 Spectre 注入以保持与其它命令一致的构造签名（本命令只读文件，不需要容器）
+    public StatusCommand(IServiceProvider _)
+    {
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
@@ -31,9 +30,8 @@ public class StatusCommand(IServiceProvider services) : AsyncCommand<StatusComma
             return 1;
         }
 
-        var json = await File.ReadAllTextAsync(stateFile);
-        var state = JsonSerializer.Deserialize<OrchestratorState>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var json = await File.ReadAllTextAsync(stateFile, ct);
+        var state = JsonSerializer.Deserialize<OrchestratorState>(json, StateJsonOptions);
 
         if (state == null)
         {
@@ -64,18 +62,31 @@ public class StatusCommand(IServiceProvider services) : AsyncCommand<StatusComma
 
         AnsiConsole.Write(table);
 
-        if (state.Queue.Any())
+        if (state.Queue.Count != 0)
         {
             var queueTable = new Table()
                 .Title("[yellow]待执行队列[/]")
                 .AddColumn("ID").AddColumn("类型").AddColumn("尝试次数").AddColumn("输入");
 
             foreach (var task in state.Queue.Take(10))
+            {
                 queueTable.AddRow(task.Id.ToString("N")[..8], task.Type, task.Attempt.ToString(), task.InputRef);
+            }
 
             AnsiConsole.Write(queueTable);
         }
 
         return 0;
+    }
+
+    public class Settings : CommandSettings
+    {
+        [CommandOption("-w|--workspace")]
+        [Description("Workspace 根路径")]
+        public string Workspace { get; set; } = "./workspace";
+
+        [CommandOption("--json")]
+        [Description("以 JSON 格式输出")]
+        public bool Json { get; set; }
     }
 }

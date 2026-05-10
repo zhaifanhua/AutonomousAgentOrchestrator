@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -51,6 +51,8 @@ public class JsonStateStoreTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_tmpDir))
+        {
             Directory.Delete(_tmpDir, recursive: true);
+        }
     }
 }

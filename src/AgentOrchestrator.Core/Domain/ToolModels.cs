@@ -1,4 +1,4 @@
-﻿namespace AgentOrchestrator.Core.Domain;
+namespace AgentOrchestrator.Core.Domain;
 
 /// <summary>
 /// CLI / 工具调用规格（参数数组方式，禁止 shell 拼接）

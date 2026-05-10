@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -47,15 +47,29 @@ public class MockLLMClient : ILLMClient
         var lower = spec.SystemPrompt.ToLowerInvariant() + spec.UserPrompt.ToLowerInvariant();
 
         if (lower.Contains("plan"))
+        {
             return JsonSerializer.Serialize(BuildPlannerResponse());
+        }
+
         if (lower.Contains("dev") || lower.Contains("implement"))
+        {
             return JsonSerializer.Serialize(BuildDeveloperResponse());
+        }
+
         if (lower.Contains("test"))
+        {
             return JsonSerializer.Serialize(BuildTesterResponse());
+        }
+
         if (lower.Contains("critic") || lower.Contains("review"))
+        {
             return JsonSerializer.Serialize(BuildCriticResponse());
+        }
+
         if (lower.Contains("reflect"))
+        {
             return JsonSerializer.Serialize(BuildReflectorResponse());
+        }
 
         return JsonSerializer.Serialize(new { success = true, notes = "mock response" });
     }
@@ -103,7 +117,9 @@ public class MockLLMClient : ILLMClient
 
     private static IEnumerable<string> ChunkString(string s, int size)
     {
-        for (int i = 0; i < s.Length; i += size)
+        for (var i = 0; i < s.Length; i += size)
+        {
             yield return s.Substring(i, Math.Min(size, s.Length - i));
+        }
     }
 }

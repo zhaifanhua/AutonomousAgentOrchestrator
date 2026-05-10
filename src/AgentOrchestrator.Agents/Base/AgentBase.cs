@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using AgentOrchestrator.Core.Observability;
 using Microsoft.Extensions.Logging;
@@ -16,16 +16,41 @@ namespace AgentOrchestrator.Agents.Base;
 /// </summary>
 public abstract class AgentBase(ILLMClient llmClient) : IAgent
 {
-    protected ILLMClient LlmClient { get; } = llmClient;
+    protected static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
 
     public abstract string Name { get; }
     public abstract string Version { get; }
     public abstract IReadOnlySet<string> Capabilities { get; }
+    protected ILLMClient LlmClient { get; } = llmClient;
 
     public abstract Task<AgentResult> ExecuteAsync(AgentContext ctx, CancellationToken ct);
 
     public virtual Task<bool> CanHandleAsync(AgentTask task, CancellationToken ct) =>
         Task.FromResult(Capabilities.Contains(task.Type));
+
+    /// <summary>
+    /// 从混合文本中提取第一个完整 JSON 对象
+    /// </summary>
+    protected static string ExtractJson(string text)
+    {
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        return start >= 0 && end > start ? text[start..(end + 1)] : text.Trim();
+    }
+
+    /// <summary>
+    /// 生成标准化失败签名（用于无进展检测）
+    /// </summary>
+    protected static string ComputeFailureSignature(string stderr, string stdout)
+    {
+        var raw = $"{stderr?.Trim()[..Math.Min(200, stderr?.Length ?? 0)]}{stdout?.Trim()[..Math.Min(200, stdout?.Length ?? 0)]}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+        return Convert.ToHexString(hash)[..16];
+    }
 
     /// <summary>
     /// 调用 LLM 并解析 JSON 结果，校验失败自动重试（带错误反馈）
@@ -43,7 +68,7 @@ public abstract class AgentBase(ILLMClient llmClient) : IAgent
         var sw = System.Diagnostics.Stopwatch.StartNew();
         string? lastError = null;
 
-        for (int attempt = 0; attempt < maxRetries; attempt++)
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
             // 重试时将上次的错误反馈追加到 prompt
             var currentSpec = lastError != null
@@ -66,7 +91,10 @@ public abstract class AgentBase(ILLMClient llmClient) : IAgent
                 // 尝试从响应中提取 JSON
                 var json = ExtractJson(response.Content);
                 var result = JsonSerializer.Deserialize<T>(json, JsonOptions);
-                if (result != null) return result;
+                if (result != null)
+                {
+                    return result;
+                }
 
                 lastError = "反序列化结果为 null";
             }
@@ -80,32 +108,4 @@ public abstract class AgentBase(ILLMClient llmClient) : IAgent
         ctx.Logger.LogError("LLM 调用 {MaxRetries} 次均失败", maxRetries);
         return null;
     }
-
-    /// <summary>
-    /// 从混合文本中提取第一个完整 JSON 对象
-    /// </summary>
-    protected static string ExtractJson(string text)
-    {
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start >= 0 && end > start)
-            return text[start..(end + 1)];
-        return text.Trim();
-    }
-
-    /// <summary>
-    /// 生成标准化失败签名（用于无进展检测）
-    /// </summary>
-    protected static string ComputeFailureSignature(string stderr, string stdout)
-    {
-        var raw = $"{stderr?.Trim()[..Math.Min(200, stderr?.Length ?? 0)]}{stdout?.Trim()[..Math.Min(200, stdout?.Length ?? 0)]}";
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
-        return Convert.ToHexString(hash)[..16];
-    }
-
-    protected static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-    };
 }

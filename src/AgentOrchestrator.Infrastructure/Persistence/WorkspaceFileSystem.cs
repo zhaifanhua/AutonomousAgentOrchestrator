@@ -25,7 +25,10 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
         var tmp = full + ".tmp";
         await File.WriteAllTextAsync(tmp, content, ct);
         File.Move(tmp, full, overwrite: true);
-        logger.LogDebug("文件已写入: {Path}", relativePath);
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            logger.LogDebug("文件已写入: {Path}", relativePath);
+        }
     }
 
     public async Task WriteBytesAsync(string relativePath, byte[] content, CancellationToken ct)
@@ -53,7 +56,11 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
     public IEnumerable<string> ListFiles(string relativePath, string pattern = "*")
     {
         var full = ResolveSafe(relativePath);
-        if (!Directory.Exists(full)) return [];
+        if (!Directory.Exists(full))
+        {
+            return [];
+        }
+
         return Directory.EnumerateFiles(full, pattern, SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(RootPath, f));
     }
@@ -61,7 +68,10 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
     public void Delete(string relativePath)
     {
         var full = ResolveSafe(relativePath);
-        if (File.Exists(full)) File.Delete(full);
+        if (File.Exists(full))
+        {
+            File.Delete(full);
+        }
     }
 
     public bool IsPathAllowed(string relativePath, IReadOnlySet<string> allowlist)
@@ -73,8 +83,20 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
     public string ResolveAndValidate(string relativePath, IReadOnlySet<string> allowlist)
     {
         if (!IsPathAllowed(relativePath, allowlist))
+        {
             throw new UnauthorizedAccessException($"路径 '{relativePath}' 不在白名单内");
+        }
+
         return ResolveSafe(relativePath);
+    }
+
+    private static void EnsureParentDirectory(string fullPath)
+    {
+        var dir = Path.GetDirectoryName(fullPath);
+        if (dir != null)
+        {
+            Directory.CreateDirectory(dir);
+        }
     }
 
     /// <summary>
@@ -84,13 +106,10 @@ public class WorkspaceFileSystem(string rootPath, ILogger<WorkspaceFileSystem> l
     {
         var full = Path.GetFullPath(Path.Combine(RootPath, relativePath));
         if (!full.StartsWith(RootPath, StringComparison.OrdinalIgnoreCase))
+        {
             throw new UnauthorizedAccessException($"路径遍历攻击检测: '{relativePath}'");
-        return full;
-    }
+        }
 
-    private static void EnsureParentDirectory(string fullPath)
-    {
-        var dir = Path.GetDirectoryName(fullPath);
-        if (dir != null) Directory.CreateDirectory(dir);
+        return full;
     }
 }

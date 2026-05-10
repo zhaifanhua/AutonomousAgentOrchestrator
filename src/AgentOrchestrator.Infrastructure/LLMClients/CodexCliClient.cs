@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Core.Domain;
+using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
@@ -32,7 +32,7 @@ public class CodexCliClient(
             Command: cliPath,
             Arguments: args,
             WorkingDirectory: Path.GetTempPath(),
-            Environment: new Dictionary<string, string>(),
+            Environment: [],
             Timeout: TimeSpan.FromSeconds(120),
             StdInput: stdinContent,
             AllowedPaths: new HashSet<string> { Path.GetTempPath() });
@@ -57,7 +57,10 @@ public class CodexCliClient(
     {
         var response = await ExecuteAsync(spec, ct);
         foreach (var chunk in ChunkString(response.Content, 50))
+        {
             yield return new LLMToken(chunk);
+        }
+
         yield return new LLMToken(string.Empty, IsLast: true);
     }
 
@@ -80,7 +83,9 @@ public class CodexCliClient(
         var args = new List<string> { "exec", "--model", spec.ModelId, "--approval-mode", "full-auto" };
 
         if (System.Text.Encoding.UTF8.GetByteCount(prompt) > StdinThresholdBytes)
+        {
             return ([.. args], prompt);
+        }
 
         args.AddRange(["-q", prompt]);
         return ([.. args], null);
@@ -90,13 +95,15 @@ public class CodexCliClient(
     {
         var prompt = (spec.SystemPrompt + spec.UserPrompt).Length / 4;
         var completion = output.Length / 4;
-        var cost = (prompt * 0.005 + completion * 0.015) / 1000.0;
+        var cost = ((prompt * 0.005) + (completion * 0.015)) / 1000.0;
         return new TokenUsage(prompt, completion, spec.ModelId, cost);
     }
 
     private static IEnumerable<string> ChunkString(string s, int size)
     {
-        for (int i = 0; i < s.Length; i += size)
+        for (var i = 0; i < s.Length; i += size)
+        {
             yield return s.Substring(i, Math.Min(size, s.Length - i));
+        }
     }
 }

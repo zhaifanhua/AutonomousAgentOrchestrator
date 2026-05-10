@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Infrastructure.Persistence;
+using AgentOrchestrator.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentOrchestrator.Tests;
@@ -23,10 +23,10 @@ public class WorkspaceFileSystemTests : IDisposable
     }
 
     [Fact]
-    public void PathTraversal_ShouldThrow()
+    public async Task PathTraversal_ShouldThrow()
     {
-        Assert.Throws<UnauthorizedAccessException>(() =>
-            _ = _fs.ReadAsync("../../etc/passwd", CancellationToken.None).Result);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            _fs.ReadAsync("../../etc/passwd", CancellationToken.None));
     }
 
     [Fact]
@@ -40,6 +40,9 @@ public class WorkspaceFileSystemTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, true);
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, true);
+        }
     }
 }

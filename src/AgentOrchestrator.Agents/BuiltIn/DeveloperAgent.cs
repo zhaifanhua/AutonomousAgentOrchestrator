@@ -1,4 +1,4 @@
-﻿using AgentOrchestrator.Agents.Base;
+using AgentOrchestrator.Agents.Base;
 using AgentOrchestrator.Core.Domain;
 using AgentOrchestrator.Core.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -11,10 +11,6 @@ namespace AgentOrchestrator.Agents.BuiltIn;
 /// </summary>
 public class DeveloperAgent(ILLMClient llmClient) : AgentBase(llmClient)
 {
-    public override string Name => "Developer";
-    public override string Version => "1.0";
-    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "dev", "implement" };
-
     private const string SystemPrompt = """
         你是一个代码实现工程师。根据规划文档，输出严格的 JSON（不得有 markdown 包裹）：
         {
@@ -25,6 +21,10 @@ public class DeveloperAgent(ILLMClient llmClient) : AgentBase(llmClient)
         }
         确保所有路径均在 src/ 或 tests/ 目录内。禁止输出 workspace 根目录外的路径。
         """;
+
+    public override string Name => "Developer";
+    public override string Version => "1.0";
+    public override IReadOnlySet<string> Capabilities => new HashSet<string> { "dev", "implement" };
 
     public override async Task<AgentResult> ExecuteAsync(AgentContext ctx, CancellationToken ct)
     {
@@ -46,7 +46,9 @@ public class DeveloperAgent(ILLMClient llmClient) : AgentBase(llmClient)
 
         var output = await CallLLMWithSchemaAsync<DeveloperOutput>(spec, ctx, ct);
         if (output?.Edits == null || output.Edits.Length == 0)
+        {
             return AgentResult.Fail("Developer 未能生成代码编辑");
+        }
 
         // 写入代码文件（路径校验在 IFileSystem 实现中）
         var artifacts = new List<Artifact>();
