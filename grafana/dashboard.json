@@ -1,0 +1,66 @@
+{
+  "title": "Agent Orchestrator",
+  "uid": "agent-orchestrator-v1",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "已完成任务数",
+      "type": "stat",
+      "targets": [{ "expr": "sum(orchestrator_tasks_completed_total)", "legendFormat": "完成" }],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "失败任务数",
+      "type": "stat",
+      "targets": [{ "expr": "sum(orchestrator_tasks_failed_total)", "legendFormat": "失败" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "red", "value": 1 }] } } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "LLM 成本（美元）",
+      "type": "stat",
+      "targets": [{ "expr": "sum(orchestrator_llm_cost_total)", "legendFormat": "成本" }],
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 }
+    },
+    {
+      "id": 4,
+      "title": "Token 消耗",
+      "type": "stat",
+      "targets": [{ "expr": "sum(orchestrator_llm_tokens_consumed_total)", "legendFormat": "tokens" }],
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 }
+    },
+    {
+      "id": 5,
+      "title": "任务执行时长分布（秒）",
+      "type": "histogram",
+      "targets": [{ "expr": "orchestrator_task_duration_bucket", "legendFormat": "{{agentType}}" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+    },
+    {
+      "id": 6,
+      "title": "LLM 调用时长（秒）",
+      "type": "timeseries",
+      "targets": [{ "expr": "histogram_quantile(0.95, orchestrator_llm_call_duration_bucket)", "legendFormat": "p95" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+    },
+    {
+      "id": 7,
+      "title": "收敛迭代次数分布",
+      "type": "histogram",
+      "targets": [{ "expr": "orchestrator_convergence_iterations_bucket", "legendFormat": "iterations" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+    },
+    {
+      "id": 8,
+      "title": "状态迁移错误",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(orchestrator_state_transition_errors_total[5m])", "legendFormat": "错误/s" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+    }
+  ]
+}
