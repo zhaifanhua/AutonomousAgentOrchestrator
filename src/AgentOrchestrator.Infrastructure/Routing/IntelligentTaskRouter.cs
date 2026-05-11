@@ -101,11 +101,11 @@ public class IntelligentTaskRouter(
             };
         }
 
-        // 正常路径：轻量任务用快速模型
+        // 正常路径：全部使用 claude-sonnet（避免走 codex 路径引发 provider 不兼容）
         return agentType switch
         {
             "Planner" or "Critic" or "Reflector" => "claude-sonnet-4-5",
-            "Developer" or "Tester" => "gpt-4o-mini",
+            "Developer" or "Tester" => "claude-sonnet-4-5",
             _ => "mock-model"
         };
     }

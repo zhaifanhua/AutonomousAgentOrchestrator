@@ -13,7 +13,9 @@ public class ResumeCommand(IServiceProvider services) : AsyncCommand<ResumeComma
 {
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
-        AnsiConsole.MarkupLine($"[yellow]从 state.json 恢复编排...[/] workspace={settings.Workspace}");
+        AnsiConsole.Write(new Rule("[bold yellow]恢复编排[/]").RuleStyle("yellow").LeftJustified());
+        AnsiConsole.MarkupLine($"[grey]工作目录:[/] {settings.Workspace}");
+        AnsiConsole.MarkupLine($"[grey]文件日志:[/] {Path.Combine(settings.Workspace, "logs", "orchestrator.jsonl")}");
 
         var orchestrator = services.GetRequiredService<OrchestratorEngine>();
 
@@ -21,7 +23,7 @@ public class ResumeCommand(IServiceProvider services) : AsyncCommand<ResumeComma
         await orchestrator.RunAsync(string.Empty, ct);
 
         var status = orchestrator.GetStatus();
-        AnsiConsole.MarkupLine($"[bold green]恢复完成[/] 已完成={status.Completed.Count}");
+        AnsiConsole.MarkupLine($"[bold green]恢复完成[/] 已完成={status.Completed.Count} 失败={status.Failed.Count}");
         return 0;
     }
 

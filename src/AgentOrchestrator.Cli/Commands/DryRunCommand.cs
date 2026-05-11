@@ -15,7 +15,11 @@ public class DryRunCommand(IServiceProvider services) : AsyncCommand<DryRunComma
 {
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
-        AnsiConsole.MarkupLine("[bold yellow]>>> DRY RUN 模式（使用 Mock LLM，不消耗真实 Token）<<<[/]");
+        AnsiConsole.Write(new Rule("[bold yellow]Dry-Run[/]").RuleStyle("yellow").LeftJustified());
+        AnsiConsole.MarkupLine("[grey]模式:[/] 使用 Mock LLM，不消耗真实 Token");
+        AnsiConsole.MarkupLine($"[grey]工作目录:[/] {settings.Workspace}");
+        AnsiConsole.MarkupLine($"[grey]需求文件:[/] {settings.RequirementRef}");
+        AnsiConsole.MarkupLine($"[grey]文件日志:[/] {Path.Combine(settings.Workspace, "logs", "orchestrator.jsonl")}");
 
         // dry-run 使用独立 workspace 避免污染真实数据
         Directory.CreateDirectory(settings.Workspace);
@@ -23,22 +27,7 @@ public class DryRunCommand(IServiceProvider services) : AsyncCommand<DryRunComma
         var orchestrator = services.GetRequiredService<OrchestratorEngine>();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromMinutes(2));
-
-        var events = new List<string>();
-        await AnsiConsole.Live(new Panel("[grey]等待事件...[/]").Header("事件流"))
-            .StartAsync(async ctx =>
-            {
-                _ = Task.Run(async () =>
-                {
-                    await orchestrator.RunAsync(settings.RequirementRef, cts.Token);
-                });
-
-                // 轮询状态 3 秒后展示
-                await Task.Delay(3000, cts.Token);
-                var status = orchestrator.GetStatus();
-                ctx.UpdateTarget(BuildStatusPanel(status));
-                await Task.Delay(2000, cts.Token);
-            });
+        await orchestrator.RunAsync(settings.RequirementRef, cts.Token, forceNew: true);
 
         var finalStatus = orchestrator.GetStatus();
         AnsiConsole.Write(BuildStatusPanel(finalStatus));

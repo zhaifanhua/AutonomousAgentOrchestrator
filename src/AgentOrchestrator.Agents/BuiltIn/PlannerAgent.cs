@@ -20,6 +20,11 @@ public class PlannerAgent(ILLMClient llmClient) : AgentBase(llmClient)
           "definition_of_done": [""],
           "notes": ""
         }
+
+        关键约束：
+        1. steps 数组最多 5 项，聚合相关文件到同一个 dev 步骤，禁止每个文件单独一步。
+        2. 典型结构：1 个 dev（核心实现）+ 1 个 dev（测试代码）+ 1 个 test + 1 个 critique。
+        3. 不允许生成超过 5 个 steps，多余步骤合并到最近的同类型步骤。
         """;
 
     public override string Name => "Planner";

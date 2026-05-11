@@ -13,17 +13,16 @@ public class RunCommand(IServiceProvider services) : AsyncCommand<RunCommand.Set
 {
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
-        // 单行紧凑标题，替代大体积 Figlet
-        AnsiConsole.MarkupLine("[bold aqua]▶ Agent Orchestrator[/]");
-        AnsiConsole.MarkupLine($"[green]工作目录:[/] {settings.Workspace}");
-        AnsiConsole.MarkupLine($"[green]需求文件:[/] {settings.RequirementRef}");
+        AnsiConsole.Write(new Rule("[bold aqua]Agent Orchestrator[/]").RuleStyle("aqua").LeftJustified());
+        AnsiConsole.MarkupLine($"[grey]工作目录:[/] {settings.Workspace}");
+        AnsiConsole.MarkupLine($"[grey]需求文件:[/] {settings.RequirementRef}");
+        AnsiConsole.MarkupLine($"[grey]文件日志:[/] {Path.Combine(settings.Workspace, "logs", "orchestrator.jsonl")}");
 
         var orchestrator = services.GetRequiredService<OrchestratorEngine>();
-        // forceNew=true：忽略已有 state.json，全新开始。这里不使用动态 spinner，避免日志输出被重绘打断。
         await orchestrator.RunAsync(settings.RequirementRef, ct, forceNew: true);
 
         var status = orchestrator.GetStatus();
-        AnsiConsole.MarkupLine($"\n[bold green]完成[/] 已完成={status.Completed.Count} 失败={status.Failed.Count}");
+        AnsiConsole.MarkupLine($"[bold green]完成[/] 已完成={status.Completed.Count} 失败={status.Failed.Count}");
         return 0;
     }
 

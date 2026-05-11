@@ -22,9 +22,9 @@ public class ClaudeCliClient(
 
     public IReadOnlySet<string> SupportedModels => new HashSet<string>
     {
-        "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5",
+        // sonnet 排第一：FallbackLLMClient 降级时 First() 优先选 sonnet，而非 opus（昂贵）
+        "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5",
         "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest",
-        // 短别名（claude CLI 支持）
         "opus", "sonnet", "haiku",
     };
 

@@ -27,15 +27,17 @@ public static class ServiceCollectionExtensions
         // 控制台使用人类可读文本；文件保留结构化 JSONL，便于后续检索。
         var logger = new LoggerConfiguration()
             .MinimumLevel.Information()
-            .WriteTo.Console(
-                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}")
             .WriteTo.File(new CompactJsonFormatter(),
                 Path.Combine(workspacePath, "logs", "orchestrator.jsonl"),
                 rollingInterval: RollingInterval.Day)
             .Enrich.WithProperty("workspace", workspacePath)
             .CreateLogger();
 
-        services.AddLogging(b => b.AddSerilog(logger, dispose: true));
+        services.AddLogging(b =>
+        {
+            b.AddProvider(new SpectreConsoleLoggerProvider(workspacePath));
+            b.AddSerilog(logger, dispose: true);
+        });
 
         // 基础设施
         services.AddSingleton<IEventBus>(sp =>

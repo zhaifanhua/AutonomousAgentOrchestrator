@@ -15,6 +15,7 @@ public class StateMachineTests
     [InlineData(AgentTaskStatus.Dev, AgentTaskStatus.Done)]
     [InlineData(AgentTaskStatus.Test, AgentTaskStatus.Done)]
     [InlineData(AgentTaskStatus.Test, AgentTaskStatus.Dev)]  // 测试失败回流
+    [InlineData(AgentTaskStatus.TimedOut, AgentTaskStatus.Failed)]
     public void ValidTransitions_ShouldNotThrow(AgentTaskStatus from, AgentTaskStatus to)
     {
         var ex = Record.Exception(() => StateMachineValidator.Validate(from, to));

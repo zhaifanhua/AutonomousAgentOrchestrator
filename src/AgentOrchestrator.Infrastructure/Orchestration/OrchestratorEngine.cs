@@ -33,14 +33,14 @@ public class OrchestratorEngine(
             SingleReader = true
         });
 
-    // 并行度信号量（同时最多 3 个 Agent 执行）
-    private readonly SemaphoreSlim _parallelSem = new(3, 3);
+    // 并行度信号量：按配置初始化（默认串行=1，避免并发 LLM 调用造成日志混乱和 API 超载）
+    private readonly SemaphoreSlim _parallelSem = new(
+        Math.Max(1, convergence.MaxParallelAgents),
+        Math.Max(1, convergence.MaxParallelAgents));
 
     // 追踪所有 fire-and-forget 执行任务，等待其完成后再退出
     private readonly List<Task> _runningTasks = [];
-
     private readonly Lock _runningTasksLock = new();
-
     private readonly Lock _stateLock = new();
     private OrchestratorState _state = new();
     private int _activeTaskCount = 0;
@@ -218,6 +218,9 @@ public class OrchestratorEngine(
 
             // 路由决策
             var route = await router.RouteAsync(currentTask, _state.Project, ct);
+            logger.LogInformation(
+                "任务路由: {TaskId} Type={Type} Agent={Agent} Model={Model} Confidence={Confidence}",
+                currentTask.Id, currentTask.Type, route.AgentType, route.ModelId, route.Confidence);
             await eventBus.PublishAsync(
                 new TaskRouted(currentTask.Id, route.AgentType, route.ModelId, route.Confidence), ct);
 
@@ -247,6 +250,9 @@ public class OrchestratorEngine(
 
             await eventBus.PublishAsync(
                 new AgentExecutionCompleted(currentTask.Id, result, sw.Elapsed), ct);
+            logger.LogInformation(
+                "Agent 执行完成: {TaskId} Success={Success} DurationMs={DurationMs}",
+                currentTask.Id, result.Success, sw.ElapsedMilliseconds);
 
             OrchestratorMetrics.TaskDurationSeconds.Record(sw.Elapsed.TotalSeconds,
                 new KeyValuePair<string, object?>("agentType", route.AgentType));
@@ -322,6 +328,7 @@ public class OrchestratorEngine(
                 logger.LogError("无进展检测触发，连续 {N} 次相同签名", noProgress);
                 var failedTask = await TransitionStateAsync(task, AgentTaskStatus.Failed, "无进展", ct);
                 MoveToFailed(failedTask);
+                TryCompleteIfIdle();
                 return;
             }
 
@@ -339,6 +346,7 @@ public class OrchestratorEngine(
             logger.LogError("任务超过最大重试次数 {Max}", convergence.MaxAttempts);
             var failedTask = await TransitionStateAsync(task, AgentTaskStatus.Failed, "超过最大重试次数", ct);
             MoveToFailed(failedTask);
+            TryCompleteIfIdle();
             return;
         }
 
@@ -379,7 +387,9 @@ public class OrchestratorEngine(
         }
         else
         {
-            MoveToFailed(timedOutTask with { Status = AgentTaskStatus.Failed });
+            var failedTask = await TransitionStateAsync(timedOutTask, AgentTaskStatus.Failed, "超过最大重试次数", ct);
+            MoveToFailed(failedTask);
+            TryCompleteIfIdle();
         }
     }
 
@@ -387,6 +397,7 @@ public class OrchestratorEngine(
     {
         var failedTask = await TransitionStateAsync(task, AgentTaskStatus.Failed, reason, ct);
         MoveToFailed(failedTask);
+        TryCompleteIfIdle();
     }
 
     /// <summary>
@@ -442,6 +453,9 @@ public class OrchestratorEngine(
     private async Task EnqueueAsync(AgentTask task, CancellationToken ct)
     {
         await _taskChannel.Writer.WriteAsync(task, ct);
+        logger.LogInformation(
+            "任务入队: {TaskId} Type={Type} Attempt={Attempt} Input={Input}",
+            task.Id, task.Type, task.Attempt, task.InputRef);
         lock (_stateLock)
         {
             _state = _state with { Queue = [.. _state.Queue, task] };
@@ -476,6 +490,14 @@ public class OrchestratorEngine(
         }
     }
 
+    private void TryCompleteIfIdle()
+    {
+        if (_taskChannel.Reader.Count == 0 && _activeTaskCount <= 1)
+        {
+            _taskChannel.Writer.TryComplete();
+        }
+    }
+
     private void UpdateConvergence(int noProgress, string signature)
     {
         lock (_stateLock)
@@ -505,6 +527,9 @@ public class OrchestratorEngine(
         try
         {
             StateMachineValidator.Validate(task.Status, to);
+            logger.LogInformation(
+                "任务状态变更: {TaskId} {From} → {To} Reason={Reason}",
+                task.Id, task.Status, to, reason);
             await eventBus.PublishAsync(new StateTransitioned(task.Id, task.Status, to, reason), ct);
             return task with
             {
@@ -560,4 +585,10 @@ public record ConvergenceConfig
     public int MaxTokens { get; init; } = 1_000_000;
     public int MaxTokensPerTask { get; init; } = 50_000;
     public double MinPassRate { get; init; } = 0.8;
+
+    /// <summary>
+    /// 最大并发 Agent 数。设为 1 时串行执行，避免日志混乱与 API 超载；
+    /// LLM CLI 调用耗时数十秒，串行是默认安全值。
+    /// </summary>
+    public int MaxParallelAgents { get; init; } = 1;
 }
